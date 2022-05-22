@@ -11,7 +11,7 @@ let zoomed = () => {
   container.selectAll('.home').attr('r', (3.0 / d3.event.transform.k));
 }
 let zoom = d3.zoom()
-  .scaleExtent([0.7, 5])
+  .scaleExtent([0.01, 1])
   .on("zoom", zoomed);
 svg.call(zoom);
 
@@ -32,30 +32,30 @@ let hourCircle = createHourCircle('OneHour.svg').attr('opacity', 0);
 let lines
 let stations
 
-Papa.parse("/schedules/Stations.csv", {
-  download: true,
-  header: true,
-  complete: ({data}) => {
-    stations = data
-      .filter(line => !!line.Name)
-      .reduce((acc, {Name, X, Y}) => ({...acc, [Name]: {name: Name, lat: X, lon: Y}}), {})
-    Papa.parse("/schedules/Routes_train.csv", {
-      download: true,
-      header: true,
-      complete: ({data}) => {
-        lines = data
-          .filter(line => !!line.Name && line.Name.indexOf('Tartu') === -1 && line.Name.indexOf('Daugavpils') === -1)
-          .map(line => ({...line, Name: line.Name.replace(/Hilsinki/, 'Helsinki')}))
-          .map(line => ({...line, Name: line.Name.replace(/Carania/, 'Catania')}))
-          .map(line => ({...line, Name: line.Name.replace(/Sevilla/, 'Seville')}))
-          .map(line => ({...line, Name: line.Name.replace(/Warzaw/, 'Warsaw')}))
-          .map(line => ({...line, Name: line.Name.replace(/Klaipèda/u, 'Klaipėda')}))
-          .map(line => ({...line, Name: line.Name.replace(/Gdansk/, 'Gdańsk')}))
-          .reduce((acc, {gid,Name,description}) => ({...acc, [`train-${gid}`]: {name: `train-${gid}`, stations: Name.split(" - ")}}), {})
-        updateMap(null, null);
-      }
-    })
-  }
+d3.csv("/schedules/Stations.csv", (data) => {
+  stations = data
+    .filter(line => !!line.Name)
+    .reduce((acc, {Name, X, Y}) => ({...acc, [Name]: {name: Name, lat: Y, lon: X}}), {})
+  d3.csv("/schedules/Routes_train.csv", (data) => {
+    lines = data
+      .filter(line => !!line.Name && !!line.description && line.Name.indexOf('Tartu') === -1 && line.Name.indexOf('Daugavpils') === -1)
+      .map(line => ({...line, Name: line.Name.replace(/Hilsinki/, 'Helsinki')}))
+      .map(line => ({...line, Name: line.Name.replace(/Carania/, 'Catania')}))
+      .map(line => ({...line, Name: line.Name.replace(/Sevilla/, 'Seville')}))
+      .map(line => ({...line, Name: line.Name.replace(/Warzaw/, 'Warsaw')}))
+      .map(line => ({...line, Name: line.Name.replace(/Klaipèda/u, 'Klaipėda')}))
+      .map(line => ({...line, Name: line.Name.replace(/Gdansk/, 'Gdańsk')}))
+      .reduce((acc, {gid, Name, description}) => ({
+        ...acc,
+        [`train-${gid}`]: {
+          name: `train-${gid}`,
+          stations: Name.split(" - "),
+          color: "#EE352E",
+          time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce((acc, value, idx) => acc + (idx === 1 ? parseInt(value) * 3600 : (idx === 2 ? parseInt(value) * 60 : 0)), 0)
+        }
+      }), {})
+    updateMap(defaultStop);
+  })
 })
 
 window.travelTimes = null;
@@ -65,6 +65,7 @@ let defaultStop = 'Westport';
 let computeStationPositions = (originStationId, travelTimes) => {
   console.log(originStationId)
   console.log(defaultStop)
+  debugger
   let originLat = stations[originStationId || defaultStop].lat;
   let originLon = stations[originStationId || defaultStop].lon;
 
@@ -106,17 +107,22 @@ let addClickHandlers = (selection) =>
     }, 100);
   })
 
-let setStationPositions = (stationPositions) => {
+let setStationPositions = () => {
   let xValue = (stationId) => stationPositions[stationId].x;
   let yValue = (stationId) => stationPositions[stationId].y;
   let xScale = d3.scaleLinear().range([0, width]).domain([-1, 1]);
   let yScale = d3.scaleLinear().range([height, 0]).domain([-1, 1]);
-  let xMap = (x) => xScale(xValue(x));
+  let xMap = (x) => {
+    console.log('x=' + x)
+    console.log('xValue(x)=' + xValue(x))
+    console.log('xScale(xValue(x))=' + xScale(xValue(x)))
+    return xScale(xValue(x));
+  };
   let yMap = (y) => yScale(yValue(y));
   let stationPositionIsReasonable = (stationId) => {
     let x = xValue(stationId);
     let y = yValue(stationId);
-    return x > -5 && x < 5 && y > -5 && y < 5;
+    return true;//x > -5 && x < 5 && y > -5 && y < 5;
   }
 
   let lineFunc = d3.line().x(xMap).y(yMap).curve(d3.curveNatural);
@@ -137,40 +143,31 @@ let setStationPositions = (stationPositions) => {
   merged.transition().attr('cx', xMap).attr('cy', yMap);
   addClickHandlers(merged);
 
-  let homeSelection = container.selectAll('.home').data([1]);
+  let homeSelection = container.selectAll('.home').data([defaultStop]);
   merged = homeSelection.enter().append('circle').attr('class', 'home').attr('r', '3').attr('fill', 'white').attr('stroke', 'black').attr('stroke-width', 2).merge(homeSelection);
   merged.transition().attr('cx', () => xScale(0)).attr('cy', () => yScale(0));
   addClickHandlers(merged);
 }
 
-let updateMap = (homeStationId, schedule) => {
-  if (homeStationId) {
-    hourCircleBlank.transition().attr('opacity', 0);
-    hourCircle.transition().attr('opacity', 1);
-    $('#initial').css({display: 'none'});
-    $('#explanation').css({display: 'block'});
-  }
+let updateMap = () => {
+  hourCircleBlank.transition().attr('opacity', 0);
+  hourCircle.transition().attr('opacity', 1);
+  $('#initial').css({display: 'none'});
+  $('#explanation').css({display: 'block'});
 
-  if (homeStationId && schedule) {
-    computeTravelTimes(homeStationId, schedule, (times) => {
-      window.travelTimes = times;
-      setStationPositions(computeStationPositions(homeStationId, times));
-    })
-  } else {
-    setStationPositions(computeStationPositions(null, null));
-  }
+  computeTravelTimes()
 }
 
-window.homeStationId = null;
+window.homeStationId = defaultStop;
 window.schedule = 'weekday_8am';
 
 let setSchedule = (schedule) => {
   window.schedule = schedule;
-  updateMap(window.homeStationId, window.schedule);
+  updateMap(window.homeStationId);
 }
 let setHomeStationId = (homeStationId) => {
   window.homeStationId = homeStationId;
-  updateMap(window.homeStationId, window.schedule);
+  updateMap(window.homeStationId);
 }
 
 $(() =>
