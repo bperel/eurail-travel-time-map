@@ -29,32 +29,63 @@ let createHourCircle = (href) =>
 let hourCircleBlank = createHourCircle('OneHourWithoutLabel.svg');
 let hourCircle = createHourCircle('OneHour.svg').attr('opacity', 0);
 
-let lines
 let stations
+let lines
+let graph
 
-d3.csv("/schedules/Stations.csv", (data) => {
-  stations = data
-    .filter(line => !!line.Name)
-    .reduce((acc, {Name, X, Y}) => ({...acc, [Name]: {name: Name, lat: Y, lon: X}}), {})
-  d3.csv("/schedules/Routes_train.csv", (data) => {
-    lines = data
-      .filter(line => !!line.Name && !!line.description && line.Name.indexOf('Tartu') === -1 && line.Name.indexOf('Daugavpils') === -1)
-      .map(line => ({...line, Name: line.Name.replace(/Hilsinki/, 'Helsinki')}))
-      .map(line => ({...line, Name: line.Name.replace(/Carania/, 'Catania')}))
-      .map(line => ({...line, Name: line.Name.replace(/Sevilla/, 'Seville')}))
-      .map(line => ({...line, Name: line.Name.replace(/Warzaw/, 'Warsaw')}))
-      .map(line => ({...line, Name: line.Name.replace(/Klaipèda/u, 'Klaipėda')}))
-      .map(line => ({...line, Name: line.Name.replace(/Gdansk/, 'Gdańsk')}))
-      .reduce((acc, {gid, Name, description}) => ({
-        ...acc,
-        [`train-${gid}`]: {
-          name: `train-${gid}`,
-          stations: Name.split(" - "),
-          color: "#EE352E",
-          time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce((acc, value, idx) => acc + (idx === 1 ? parseInt(value) * 3600 : (idx === 2 ? parseInt(value) * 60 : 0)), 0)
+const addStations = (data) => {
+  stations = {
+    ...stations, ...(data.filter(line => !!line.Name)
+      .reduce((acc, {Name, X, Y}) => ({...acc, [Name]: {name: Name, lat: Y, lon: X}}), {}))
+  }
+}
+
+const addLines = (data, prefix) => {
+  lines = {...lines, ...(data
+    .filter(line => !!line.Name && !!line.description && line.Name.indexOf('Tartu') === -1 && line.Name.indexOf('Daugavpils') === -1)
+    .map(line => ({...line, Name: line.Name.replace(/Hilsinki/, 'Helsinki')}))
+    .map(line => ({...line, Name: line.Name.replace(/Carania/, 'Catania')}))
+    .map(line => ({...line, Name: line.Name.replace(/Sevilla/, 'Seville')}))
+    .map(line => ({...line, Name: line.Name.replace(/Warzaw/, 'Warsaw')}))
+    .map(line => ({...line, Name: line.Name.replace(/Klaipèda/u, 'Klaipėda')}))
+    .map(line => ({...line, Name: line.Name.replace(/Gdansk/, 'Gdańsk')}))
+    .reduce((acc, {gid, Name, description}) => ({
+      ...acc,
+      [`${prefix}-${gid}`]: {
+        name: `${prefix}-${gid}`,
+        stations: Name.split(" - "),
+        color: prefix === 'train' ? 'red': 'blue',
+        time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce((acc, value, idx) => acc + (idx === 1 ? parseInt(value) * 3600 : (idx === 2 ? parseInt(value) * 60 : 0)), 0)
+      }
+    }), {}))}
+}
+
+d3.csv("/schedules/Stations.csv", (stations) => {
+  addStations(stations)
+  d3.csv("/schedules/Ports.csv", (ports) => {
+    addStations(ports)
+    d3.csv("/schedules/Routes_train.csv", (trainRoutes) => {
+      addLines(trainRoutes, 'train')
+      d3.csv("/schedules/Router_ferry.csv", (ferryRoutes) => {
+        addLines(ferryRoutes, 'ferry')
+
+        graph = Object.values(lines).reduce((acc, {stations: [station1, station2], time}) => ({
+          ...acc,
+          [station1]: {...(acc[[station1]] || {}), [station2]: (time)}
+        }), {})
+        for (const [station1, stations2] of Object.entries(graph)) {
+          for (const [station2, time] of Object.entries(stations2)) {
+            if (!graph[station2]) {
+              graph[station2] = {}
+            }
+            if (!graph[station2][station1]) {
+              graph[station2][station1] = time
+            }
+          }
         }
-      }), {})
-    updateMap(defaultStop);
+        updateMap(defaultStop);
+      })
+    })
   })
 })
 
@@ -63,9 +94,6 @@ window.travelTimes = null;
 let defaultStop = 'Westport';
 
 let computeStationPositions = (originStationId, travelTimes) => {
-  console.log(originStationId)
-  console.log(defaultStop)
-  debugger
   let originLat = stations[originStationId || defaultStop].lat;
   let originLon = stations[originStationId || defaultStop].lon;
 
@@ -112,12 +140,7 @@ let setStationPositions = () => {
   let yValue = (stationId) => stationPositions[stationId].y;
   let xScale = d3.scaleLinear().range([0, width]).domain([-1, 1]);
   let yScale = d3.scaleLinear().range([height, 0]).domain([-1, 1]);
-  let xMap = (x) => {
-    console.log('x=' + x)
-    console.log('xValue(x)=' + xValue(x))
-    console.log('xScale(xValue(x))=' + xScale(xValue(x)))
-    return xScale(xValue(x));
-  };
+  let xMap = (x) => xScale(xValue(x));
   let yMap = (y) => yScale(yValue(y));
   let stationPositionIsReasonable = (stationId) => {
     let x = xValue(stationId);
