@@ -12,6 +12,7 @@ let computeTravelTimes = () => {
     travelTimes[reachableStation] = pathSteps.reduce((acc, station, idx) => acc + (idx === 0? 0 : graph[pathSteps[idx - 1]][station]), 0)
   }
 
+  travelTimes[homeStationId] = 0
   window.travelTimes = travelTimes;
   window.stationPositions = computeStationPositions(homeStationId, travelTimes)
   setStationPositions();

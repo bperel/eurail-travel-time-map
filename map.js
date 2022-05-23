@@ -15,8 +15,8 @@ let zoom = d3.zoom()
   .on("zoom", zoomed);
 svg.call(zoom);
 
-let maxTravelTime = 70 * 60;
-let hourLineSvgSize = 60 * 60 / maxTravelTime * width;
+let maxTravelTime = 140 * 60;
+let hourLineSvgSize = 2 * 60 * 60 / maxTravelTime * width;
 
 let createHourCircle = (href) =>
   container.append("image")
@@ -26,8 +26,8 @@ let createHourCircle = (href) =>
     .attr("width", hourLineSvgSize)
     .attr("height", hourLineSvgSize)
 
-let hourCircleBlank = createHourCircle('OneHourWithoutLabel.svg');
-let hourCircle = createHourCircle('OneHour.svg').attr('opacity', 0);
+let hourCircleBlank = createHourCircle('TwoHoursWithoutLabel.svg');
+let hourCircle = createHourCircle('TwoHours.svg').attr('opacity', 0);
 
 let stations
 let lines
@@ -41,23 +41,29 @@ const addStations = (data) => {
 }
 
 const addLines = (data, prefix) => {
-  lines = {...lines, ...(data
-    .filter(line => !!line.Name && !!line.description && line.Name.indexOf('Tartu') === -1 && line.Name.indexOf('Daugavpils') === -1)
-    .map(line => ({...line, Name: line.Name.replace(/Hilsinki/, 'Helsinki')}))
-    .map(line => ({...line, Name: line.Name.replace(/Carania/, 'Catania')}))
-    .map(line => ({...line, Name: line.Name.replace(/Sevilla/, 'Seville')}))
-    .map(line => ({...line, Name: line.Name.replace(/Warzaw/, 'Warsaw')}))
-    .map(line => ({...line, Name: line.Name.replace(/Klaipèda/u, 'Klaipėda')}))
-    .map(line => ({...line, Name: line.Name.replace(/Gdansk/, 'Gdańsk')}))
-    .reduce((acc, {gid, Name, description}) => ({
-      ...acc,
-      [`${prefix}-${gid}`]: {
-        name: `${prefix}-${gid}`,
-        stations: Name.split(" - "),
-        color: prefix === 'train' ? 'red': 'blue',
-        time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce((acc, value, idx) => acc + (idx === 1 ? parseInt(value) * 3600 : (idx === 2 ? parseInt(value) * 60 : 0)), 0)
-      }
-    }), {}))}
+  lines = {
+    ...lines, ...(data
+      .filter(line => !!line.Name && !!line.description && line.Name.indexOf('Tartu') === -1 && line.Name.indexOf('Daugavpils') === -1)
+      .map(line => ({...line, Name: line.Name.replace(/Hilsinki/, 'Helsinki')}))
+      .map(line => ({...line, Name: line.Name.replace(/Carania/, 'Catania')}))
+      .map(line => ({...line, Name: line.Name.replace(/Sevilla/, 'Seville')}))
+      .map(line => ({...line, Name: line.Name.replace(/Warzaw/, 'Warsaw')}))
+      .map(line => ({...line, Name: line.Name.replace(/Klaipèda/u, 'Klaipėda')}))
+      .map(line => ({...line, Name: line.Name.replace(/Gdansk/, 'Gdańsk')}))
+      .reduce((acc, {gid, Name, description}) => ({
+        ...acc,
+        [`${prefix}-${gid}`]: {
+          name: `${prefix}-${gid}`,
+          stations: Name.split(" - "),
+          color: prefix === 'train' ? 'red' : 'blue',
+          time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce(
+            (acc, value, idx) =>
+              acc + (idx && value ? parseInt(value) * Math.pow(60, (1 + (2 - idx))) : 0),
+            0
+          )
+        }
+      }), {}))
+  }
 }
 
 d3.csv("/schedules/Stations.csv", (stations) => {
@@ -121,12 +127,21 @@ let addClickHandlers = (selection) =>
     shouldHideTooltip = false;
     tooltip.css({top: `${d3.event.pageY + 10}px`, left: `${d3.event.pageX + 10}px`, display: 'block'});
     let innerHTML = `<strong>${stations[d].name}</strong><br/>`;
-    if (travelTimes) {
-      let minutesAway = (travelTimes[d] / 60 | 0);
-      innerHTML += `${minutesAway} minutes away`;
+    let minutesAway = (travelTimes[d] / 60 | 0);
+    if (minutesAway === MAX_TIME / 60) {
+      tooltip.html(`${innerHTML} Very far away`);
+      return
     }
-    tooltip.html(innerHTML);
-  }).on('mouseleave', (d) => {
+    let hoursAway = Math.floor(minutesAway / 60)
+    minutesAway -= hoursAway * 60
+    if (hoursAway) {
+      innerHTML += `${hoursAway} hours `
+    }
+    if (minutesAway) {
+      innerHTML += `${minutesAway} minutes `
+    }
+    tooltip.html(`${innerHTML} ${hoursAway || minutesAway ? 'away' : ''}`);
+  }).on('mouseleave', () => {
     shouldHideTooltip = true;
     setTimeout(() => {
       if (shouldHideTooltip) {
@@ -140,20 +155,23 @@ let setStationPositions = () => {
   let yValue = (stationId) => stationPositions[stationId].y;
   let xScale = d3.scaleLinear().range([0, width]).domain([-1, 1]);
   let yScale = d3.scaleLinear().range([height, 0]).domain([-1, 1]);
-  let xMap = (x) => xScale(xValue(x));
+  let xMap = (x) => {
+    let value = xScale(xValue(x));
+    if (!value) {
+      console.log(x)
+      console.log(xValue(x))
+    }
+    return value;
+  };
   let yMap = (y) => yScale(yValue(y));
-  let stationPositionIsReasonable = (stationId) => {
-    let x = xValue(stationId);
-    let y = yValue(stationId);
-    return true;//x > -5 && x < 5 && y > -5 && y < 5;
-  }
 
   let lineFunc = d3.line().x(xMap).y(yMap).curve(d3.curveNatural);
-  let createLine = (subwayLine) => lineFunc(subwayLine.stations.filter(stationPositionIsReasonable))
+  let createLine = (subwayLine) => lineFunc(subwayLine.stations)
 
   let lineSelection = container.selectAll('.line').data(Object.values(lines));
   lineSelection.enter().append('path')
     .attr('class', 'line')
+    .attr('name', (l) => l.stations.join('-'))
     .attr('stroke', (l) => l.color)
     .attr('stroke-width', 3)
     .merge(lineSelection)
@@ -192,11 +210,3 @@ let setHomeStationId = (homeStationId) => {
   window.homeStationId = homeStationId;
   updateMap(window.homeStationId);
 }
-
-$(() =>
-  $('#timePicker li').click((e) => {
-    let schedule = e.target.getAttribute('data-schedule');
-    $('#timePicker li').removeClass('selected');
-    $(e.target).addClass('selected');
-    setSchedule(schedule);
-  }))
