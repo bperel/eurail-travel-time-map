@@ -2,119 +2,10 @@
 <html>
 <head>
     <meta charset='utf-8'/>
-    <title>NYC Subway Travel Time Map</title>
+    <title>Eurail Travel Time Map</title>
     <meta property="og:title" content="Eurail Travel Time Map"/>
     <meta property="og:type" content="website"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <script src="https://d3js.org/d3.v4.min.js"></script>
-    <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-            font-family: "HelveticaNeue", "Helvetica", "Arial", sans-serif;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        svg {
-            background-color: #f8f8ff;
-            height: 100%;
-            width: 100%;
-        }
-
-        #tooltip {
-            position: absolute;
-            pointer-events: none;
-            background-color: #2a2a2f;
-            color: white;
-            font-size: small;
-            padding: 4px 8px;
-        }
-
-        svg {
-            cursor: grab;
-        }
-
-        .stop, .home {
-            cursor: default;
-        }
-
-        .line, .stop, .home {
-            vector-effect: non-scaling-stroke;
-        }
-
-        .stop {
-            stroke-width: 15;
-            stroke: transparent;
-        }
-
-        .hour {
-            stroke: rgba(0, 0, 100, 0.1);
-            stroke-width: 1px;
-            fill: transparent;
-            z-index: -1;
-        }
-
-        #info {
-            position: fixed;
-            top: 2vh;
-            left: 2vh;
-            width: 25vw;
-            background-color: #36363f;
-            color: white;
-            padding: 10px;
-            line-height: 1.4;
-        }
-
-        #info h1 {
-            font-size: 1.2em;
-            margin-top: 0;
-            border-top: 2px solid white;
-            padding-top: 5px;
-        }
-
-        #info p {
-
-        }
-
-        #info .fine-print {
-            opacity: 0.5;
-            font-size: small;
-        }
-
-        #explanation {
-            display: none;
-        }
-
-        a:link, a:visited {
-            color: inherit;
-        }
-
-        #attribution {
-            margin-top: 2em;
-            text-align: right;
-            font-size: small;
-            margin-bottom: 0;
-        }
-
-        @media screen and (max-width: 500px) {
-            .stop {
-                stroke-width: 22px;
-            }
-
-            #info {
-                width: auto;
-                right: 2vh;
-                top: auto;
-                bottom: 2vh;
-                max-height: 20vh;
-                overflow-y: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-        }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/dijkstrajs@1.0.2/dijkstra.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
-    <script src="virtual_rider.js"></script>
 </head>
 <body>
 <div id='info'>
@@ -128,7 +19,7 @@
         </p>
     </div>
 </div>
-<div id="tooltip" style="display: none"></div>
-<script src='map.js'></script>
+<div id="tooltip"></div>
+<script type="module" src="/main.js"></script>
 </body>
 </html>
