@@ -1,6 +1,5 @@
 import './style.css'
 import * as d3 from 'd3'
-import jQuery from 'jquery'
 import {getTravelTimes, MAX_TIME} from './virtual_rider'
 
 const width = 500;
@@ -10,7 +9,9 @@ const svg = d3.select("body").append("svg")
   .attr("viewBox", `0 0 ${width} ${height}`);
 const container = svg.append('g');
 
-const tooltip = jQuery('#tooltip');
+const tooltip = document.getElementById('tooltip');
+
+const defaultStop = 'Westport';
 
 const zoomed = () => {
   container.attr("transform", d3.event.transform);
@@ -79,7 +80,8 @@ const setStationPositions = (stationPositions) => {
     .attr('fill', 'none');
 
   const stopSelection = container.selectAll('.stop').data(Object.keys(stationsAndPorts));
-  let merged = stopSelection.enter().append('circle').attr('class', 'stop').attr('r', '2').attr('fill', 'black').merge(stopSelection);
+  let merged = stopSelection.enter().append('circle').attr('class', 'stop')
+    .attr('stroke', (l) => l.color).attr('r', '2').attr('fill', 'black').merge(stopSelection);
   merged.transition().attr('cx', xMap).attr('cy', yMap);
   addClickHandlers(merged);
 
@@ -93,8 +95,8 @@ let travelTimes = null;
 const updateMap = (homeStationId) => {
   hourCircleBlank.transition().attr('opacity', 0);
   hourCircle.transition().attr('opacity', 1);
-  jQuery('#initial').css({display: 'none'});
-  jQuery('#explanation').css({display: 'block'});
+  document.getElementById('initial').style.display = 'none';
+  document.getElementById('explanation').style.display = 'block';
 
   travelTimes = getTravelTimes(homeStationId, graph, stationsAndPorts)
   const stationPositions = computeStationPositions(homeStationId, travelTimes)
@@ -106,11 +108,13 @@ let shouldHideTooltip = true;
 const addClickHandlers = (selection) =>
   selection.on('click', (d) => updateMap(d)).on('mouseenter', (d) => {
     shouldHideTooltip = false;
-    tooltip.css({top: `${d3.event.pageY + 10}px`, left: `${d3.event.pageX + 10}px`, display: 'block'});
+    tooltip.style.top = `${d3.event.pageY + 10}px`
+    tooltip.style.left = `${d3.event.pageX + 10}px`
+    tooltip.style.display = 'block';
     let innerHTML = `<strong>${stationsAndPorts[d].name}</strong><br/>`;
     let minutesAway = (travelTimes[d] / 60 | 0);
     if (minutesAway === MAX_TIME / 60) {
-      tooltip.html(`${innerHTML} Very far away`);
+      tooltip.innerHTML = `${innerHTML} Very far away`;
       return
     }
     const hoursAway = Math.floor(minutesAway / 60);
@@ -121,12 +125,12 @@ const addClickHandlers = (selection) =>
     if (minutesAway) {
       innerHTML += `${minutesAway} minutes `
     }
-    tooltip.html(`${innerHTML} ${hoursAway || minutesAway ? 'away' : ''}`);
+    tooltip.innerHTML = `${innerHTML} ${hoursAway || minutesAway ? 'away' : ''}`;
   }).on('mouseleave', () => {
     shouldHideTooltip = true;
     setTimeout(() => {
       if (shouldHideTooltip) {
-        tooltip.css({display: 'none'});
+        tooltip.style.display = 'none';
       }
     }, 100);
   });
@@ -134,70 +138,79 @@ const addClickHandlers = (selection) =>
 const hourCircleBlank = createHourCircle('TwoHoursWithoutLabel.svg');
 const hourCircle = createHourCircle('TwoHours.svg').attr('opacity', 0);
 
-let stationsAndPorts
-let lines
+let stationsAndPorts = {}
+let lines = {}
 let graph
 
-const addStations = (data) => {
-  stationsAndPorts = {
-    ...stationsAndPorts, ...(data.filter(line => !!line.Name)
-      .reduce((acc, {Name, X, Y}) => ({...acc, [Name]: {name: Name, lat: Y, lon: X}}), {}))
+const addStation = ({name, description, coordinates, type}) => {
+  stationsAndPorts[name] = {
+    name,
+    description,
+    color: type === 'Station' ? 'red' : 'blue',
+    ...coordinates[0]
   }
 }
 
-const addLines = (data, prefix) => {
-  lines = {
-    ...lines, ...(data
-      .filter(line => !!line.Name && !!line.description && line.Name.indexOf('Tartu') === -1 && line.Name.indexOf('Daugavpils') === -1)
-      .map(line => ({...line, Name: line.Name.replace(/Hilsinki/, 'Helsinki')}))
-      .map(line => ({...line, Name: line.Name.replace(/Carania/, 'Catania')}))
-      .map(line => ({...line, Name: line.Name.replace(/Sevilla/, 'Seville')}))
-      .map(line => ({...line, Name: line.Name.replace(/Warzaw/, 'Warsaw')}))
-      .map(line => ({...line, Name: line.Name.replace(/Klaipèda/u, 'Klaipėda')}))
-      .map(line => ({...line, Name: line.Name.replace(/Gdansk/, 'Gdańsk')}))
-      .reduce((acc, {gid, Name, description}) => ({
-        ...acc,
-        [`${prefix}-${gid}`]: {
-          name: `${prefix}-${gid}`,
-          stations: Name.split(" - "),
-          color: prefix === 'train' ? 'red' : 'blue',
-          time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce(
-            (acc, value, idx) =>
-              acc + (idx && value ? parseInt(value) * Math.pow(60, (1 + (2 - idx))) : 0),
-            0
-          )
-        }
-      }), {}))
+const addLine = ({description, name, type, coordinates}) => {
+  if (!description || !name || name.indexOf('Tartu') !== -1 || name.indexOf('Daugavpils') !== -1) {
+    return
+  }
+  name = name.replace(/Hilsinki/, 'Helsinki')
+  name = name.replace(/Carania/, 'Catania')
+  name = name.replace(/Sevilla/, 'Seville')
+  name = name.replace(/Warzaw/, 'Warsaw')
+  name = name.replace(/Klaipèda/u, 'Klaipėda')
+  name = name.replace(/Gdansk/, 'Gdańsk')
+  lines[name] = {
+    name,
+    coordinates,
+    stations: name.split(' - '),
+    color: type === 'Routes (train)' ? 'red' : 'blue',
+    time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce(
+      (acc, value, idx) =>
+        acc + (idx && value ? parseInt(value) * Math.pow(60, (1 + (2 - idx))) : 0),
+      0
+    )
   }
 }
 
-d3.csv("schedules/Stations.csv", (stations) => {
-  addStations(stations)
-  d3.csv("schedules/Ports.csv", (ports) => {
-    addStations(ports)
-    d3.csv("schedules/Routes_train.csv", (trainRoutes) => {
-      addLines(trainRoutes, 'train')
-      d3.csv("schedules/Router_ferry.csv", (ferryRoutes) => {
-        addLines(ferryRoutes, 'ferry')
+d3.xml('doc.kml', (output) => {
+  [...output.documentElement.getElementsByTagName("Placemark")]
+    .forEach((element) => {
+      const description = (element.getElementsByTagName('description')[0] || {textContent: null}).textContent
+      let name = element.getElementsByTagName('name')[0].textContent;
+      const coordinates = element.getElementsByTagName('coordinates')[0].textContent.trim().split(/[ \n]+/)
+        .map(coordinates => coordinates.split(',')
+          .filter((_, idx) => idx < 2)
+          .reduce(
+            (acc, coordinate, idx) => ({
+              ...acc,
+              [idx === 0 ? 'lon' : 'lat']: coordinate
+            }),
+            {})
+        );
+      const type = element.parentElement.getElementsByTagName('name')[0].textContent;
 
-        graph = Object.values(lines).reduce((acc, {stations: [station1, station2], time}) => ({
-          ...acc,
-          [station1]: {...(acc[[station1]] || {}), [station2]: (time)}
-        }), {})
-        for (const [station1, stations2] of Object.entries(graph)) {
-          for (const [station2, time] of Object.entries(stations2)) {
-            if (!graph[station2]) {
-              graph[station2] = {}
-            }
-            if (!graph[station2][station1]) {
-              graph[station2][station1] = time
-            }
-          }
-        }
-        updateMap(defaultStop);
-      })
+      if (['Station', 'Ports'].includes(type)) {
+        addStation({name, description, coordinates, type})
+      } else {
+        addLine({description, name, coordinates, type})
+      }
     })
-  })
-})
 
-const defaultStop = 'Westport';
+  graph = Object.values(lines).reduce((acc, {stations: [station1, station2], time}) => ({
+    ...acc,
+    [station1]: {...(acc[[station1]] || {}), [station2]: (time)}
+  }), {})
+  for (const [station1, stations2] of Object.entries(graph)) {
+    for (const [station2, time] of Object.entries(stations2)) {
+      if (!graph[station2]) {
+        graph[station2] = {}
+      }
+      if (!graph[station2][station1]) {
+        graph[station2][station1] = time
+      }
+    }
+  }
+  updateMap(defaultStop);
+})
