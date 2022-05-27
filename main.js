@@ -12,11 +12,12 @@ const container = svg.append('g');
 const tooltip = document.getElementById('tooltip');
 
 const defaultStop = 'Westport';
+let homeStationId;
 
 const zoomed = () => {
   container.attr("transform", d3.event.transform);
-  container.selectAll('.stop').attr('r', (2.0 / d3.event.transform.k));
-  container.selectAll('.home').attr('r', (3.0 / d3.event.transform.k));
+  container.selectAll('.stop').attr('r', (6.0 / d3.event.transform.k));
+  container.selectAll('.home').attr('r', (10.0 / d3.event.transform.k));
 };
 
 const zoom = d3.zoom()
@@ -37,8 +38,8 @@ const createHourCircle = (href) =>
 
 
 const computeStationPositions = (originStationId, travelTimes) => {
-  const originLat = stationsAndPorts[originStationId || defaultStop].lat;
-  const originLon = stationsAndPorts[originStationId || defaultStop].lon;
+  const originLat = stationsAndPorts[originStationId].lat;
+  const originLon = stationsAndPorts[originStationId].lon;
 
   const positions = {};
   for (const stationId of Object.keys(stationsAndPorts)) {
@@ -55,7 +56,6 @@ const computeStationPositions = (originStationId, travelTimes) => {
 
   return positions;
 };
-
 
 const setStationPositions = (stationPositions) => {
   const xValue = (stationId) => stationPositions[stationId].x;
@@ -81,18 +81,19 @@ const setStationPositions = (stationPositions) => {
 
   const stopSelection = container.selectAll('.stop').data(Object.keys(stationsAndPorts));
   let merged = stopSelection.enter().append('circle').attr('class', 'stop')
-    .attr('stroke', (l) => l.color).attr('r', '2').attr('fill', 'black').merge(stopSelection);
+    .attr('stroke', (l) => l.color).attr('r', 6).attr('fill', 'black').merge(stopSelection);
   merged.transition().attr('cx', xMap).attr('cy', yMap);
   addClickHandlers(merged);
 
-  const homeSelection = container.selectAll('.home').data([defaultStop]);
-  merged = homeSelection.enter().append('circle').attr('class', 'home').attr('r', '3').attr('fill', 'white').attr('stroke', 'black').attr('stroke-width', 2).merge(homeSelection);
+  const homeSelection = container.selectAll('.home').data([homeStationId]);
+  merged = homeSelection.enter().append('circle').attr('class', 'home').attr('r', 10).attr('fill', 'white').attr('stroke', 'black').attr('stroke-width', 2).merge(homeSelection);
   merged.transition().attr('cx', () => xScale(0)).attr('cy', () => yScale(0));
   addClickHandlers(merged);
 };
 
 let travelTimes = null;
-const updateMap = (homeStationId) => {
+const updateMap = (newHomeStationId) => {
+  homeStationId = newHomeStationId
   hourCircleBlank.transition().attr('opacity', 0);
   hourCircle.transition().attr('opacity', 1);
   document.getElementById('initial').style.display = 'none';
@@ -103,30 +104,31 @@ const updateMap = (homeStationId) => {
   setStationPositions(stationPositions);
 }
 
-
 let shouldHideTooltip = true;
 const addClickHandlers = (selection) =>
-  selection.on('click', (d) => updateMap(d)).on('mouseenter', (d) => {
-    shouldHideTooltip = false;
-    tooltip.style.top = `${d3.event.pageY + 10}px`
-    tooltip.style.left = `${d3.event.pageX + 10}px`
-    tooltip.style.display = 'block';
-    let innerHTML = `<strong>${stationsAndPorts[d].name}</strong><br/>`;
-    let minutesAway = (travelTimes[d] / 60 | 0);
-    if (minutesAway === MAX_TIME / 60) {
-      tooltip.innerHTML = `${innerHTML} Very far away`;
-      return
-    }
-    const hoursAway = Math.floor(minutesAway / 60);
-    minutesAway -= hoursAway * 60
-    if (hoursAway) {
-      innerHTML += `${hoursAway} hours `
-    }
-    if (minutesAway) {
-      innerHTML += `${minutesAway} minutes `
-    }
-    tooltip.innerHTML = `${innerHTML} ${hoursAway || minutesAway ? 'away' : ''}`;
-  }).on('mouseleave', () => {
+  selection
+    .on('click', (d) => updateMap(d))
+    .on('mouseenter', (d) => {
+      shouldHideTooltip = false;
+      tooltip.style.top = `${d3.event.pageY + 10}px`
+      tooltip.style.left = `${d3.event.pageX + 10}px`
+      tooltip.style.display = 'block';
+      let innerHTML = `<strong>${stationsAndPorts[d].name}</strong><br/>`;
+      let minutesAway = (travelTimes[d] / 60 | 0);
+      if (minutesAway === MAX_TIME / 60) {
+        tooltip.innerHTML = `${innerHTML} Very far away`;
+        return
+      }
+      const hoursAway = Math.floor(minutesAway / 60);
+      minutesAway -= hoursAway * 60
+      if (hoursAway) {
+        innerHTML += `${hoursAway} hours `
+      }
+      if (minutesAway) {
+        innerHTML += `${minutesAway} minutes `
+      }
+      tooltip.innerHTML = `${innerHTML} ${hoursAway || minutesAway ? 'away' : ''}`;
+    }).on('mouseleave', () => {
     shouldHideTooltip = true;
     setTimeout(() => {
       if (shouldHideTooltip) {
@@ -142,17 +144,16 @@ let stationsAndPorts = {}
 let lines = {}
 let graph
 
-const addStation = ({name, description, coordinates, type}) => {
+const addStation = ({name, coordinates, type}) => {
   stationsAndPorts[name] = {
     name,
-    description,
     color: type === 'Station' ? 'red' : 'blue',
-    ...coordinates[0]
+    ...coordinates
   }
 }
 
 const addLine = ({description, name, type, coordinates}) => {
-  if (!description || !name || name.indexOf('Tartu') !== -1 || name.indexOf('Daugavpils') !== -1) {
+  if (!description) {
     return
   }
   name = name.replace(/Hilsinki/, 'Helsinki')
@@ -161,10 +162,12 @@ const addLine = ({description, name, type, coordinates}) => {
   name = name.replace(/Warzaw/, 'Warsaw')
   name = name.replace(/Klaipèda/u, 'Klaipėda')
   name = name.replace(/Gdansk/, 'Gdańsk')
+
+  const lineStations = name.split(' - ');
   lines[name] = {
     name,
     coordinates,
-    stations: name.split(' - '),
+    stations: lineStations,
     color: type === 'Routes (train)' ? 'red' : 'blue',
     time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce(
       (acc, value, idx) =>
@@ -172,11 +175,25 @@ const addLine = ({description, name, type, coordinates}) => {
       0
     )
   }
+
+  for (const [idx, stationName] of Object.entries(lineStations)) {
+    if (!lineStations[stationName]) {
+      addStation({
+        name: stationName,
+        coordinates: coordinates[idx],
+        type: type === 'Routes (train)' ? 'Station' : 'Port'
+      })
+    }
+  }
 }
 
 d3.xml('doc.kml', (output) => {
   [...output.documentElement.getElementsByTagName("Placemark")]
     .forEach((element) => {
+      const type = element.parentElement.getElementsByTagName('name')[0].textContent;
+      if (!/^Route/.test(type)) {
+        return
+      }
       const description = (element.getElementsByTagName('description')[0] || {textContent: null}).textContent
       let name = element.getElementsByTagName('name')[0].textContent;
       const coordinates = element.getElementsByTagName('coordinates')[0].textContent.trim().split(/[ \n]+/)
@@ -189,13 +206,7 @@ d3.xml('doc.kml', (output) => {
             }),
             {})
         );
-      const type = element.parentElement.getElementsByTagName('name')[0].textContent;
-
-      if (['Station', 'Ports'].includes(type)) {
-        addStation({name, description, coordinates, type})
-      } else {
-        addLine({description, name, coordinates, type})
-      }
+      addLine({description, name, coordinates, type})
     })
 
   graph = Object.values(lines).reduce((acc, {stations: [station1, station2], time}) => ({
