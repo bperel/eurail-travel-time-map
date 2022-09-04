@@ -1,6 +1,7 @@
 import './style.css'
 import * as d3 from 'd3'
 import {getTravelTimes, MAX_TIME} from './virtual_rider'
+import {stations, journeys} from "interrail";
 
 const width = 500;
 const height = 500;
@@ -91,13 +92,49 @@ const setStationPositions = (stationPositions) => {
   addClickHandlers(merged);
 };
 
+let stationDetailsCache = {}
+const getStationDetails = async (stationName) => {
+  if (!stationDetailsCache[stationName]) {
+    const stationResults = await stations.search(stationName, {results: 1})
+    stationDetailsCache[stationName] = {name: stationResults[0].name, id: stationResults[0].id}
+  }
+  return stationDetailsCache[stationName]
+}
+
+let journeyDetailsCache = {}
+const getJourneyDetails = async (stationName1, stationName2) => {
+  let key = [stationName1, stationName2].join(',');
+  if (!journeyDetailsCache[key]) {
+    const journeyResults = await journeys(
+      stationDetailsCache[stationName1].id,
+      stationDetailsCache[stationName2].id,
+      { when: new Date('2022-09-06T05:00:00+0200') }
+    )
+    journeyDetailsCache[key] = journeyResults
+  }
+  return journeyDetailsCache[key]
+}
+
 let travelTimes = null;
-const updateMap = (newHomeStationId) => {
+const updateMap = async (newHomeStationId) => {
   homeStationId = newHomeStationId
   hourCircleBlank.transition().attr('opacity', 0);
   hourCircle.transition().attr('opacity', 1);
-  document.getElementById('initial').style.display = 'none';
-  document.getElementById('explanation').style.display = 'block';
+
+  let stationName = stationsAndPorts[homeStationId].name;
+  let detailsElement = document.getElementById('details');
+  detailsElement.textContent = 'Selected station: ' + (await getStationDetails(stationName)).name
+
+  const directDestinations = Object.values(lines)
+    .filter(({stations}) => stations.includes(stationName))
+    .map(({stations}) => stations.find(otherStationName => otherStationName !== stationName))
+  console.log(directDestinations)
+
+  for (const directDestination of directDestinations) {
+    await getStationDetails(directDestination)
+    const journeyResults = await getJourneyDetails(stationName, directDestination);
+    console.log(journeyResults)
+  }
 
   travelTimes = getTravelTimes(homeStationId, graph, stationsAndPorts)
   const stationPositions = computeStationPositions(homeStationId, travelTimes)
@@ -224,4 +261,5 @@ d3.xml('doc.kml', (output) => {
     }
   }
   updateMap(defaultStop);
+  console.log(lines)
 })

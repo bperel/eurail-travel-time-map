@@ -70,10 +70,6 @@ svg {
   font-size: small;
 }
 
-#explanation {
-  display: none;
-}
-
 a:link, a:visited {
   color: inherit;
 }

@@ -1,5 +1,30 @@
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
 import {defineConfig} from "vite";
 
 export default defineConfig({
-  base: '/eurail-travel-time-map/'
+  server: {
+    port: 3000
+  },
+  base: '/eurail-travel-time-map/',
+
+  resolve: {
+    fallback: {
+      'assert': require.resolve('assert/') // don't forget  to install assert (npm i --save-dev assert)
+    }
+  },
+
+  optimizeDeps: {
+    esbuildOptions: {
+      // Node.js global to browser globalThis
+      define: {
+        global: 'globalThis'
+      },
+      // Enable esbuild polyfill plugins
+      plugins: [
+        NodeGlobalsPolyfillPlugin({
+          buffer: true
+        })
+      ]
+    }
+  }
 })
