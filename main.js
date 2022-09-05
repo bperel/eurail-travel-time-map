@@ -1,7 +1,11 @@
 import './style.css'
 import * as d3 from 'd3'
 import {getTravelTimes, MAX_TIME} from './virtual_rider'
-import {stations, journeys} from "interrail";
+import {journeys, stations} from "interrail";
+import dayjs from "dayjs";
+import duration from "dayjs/plugin/duration";
+
+dayjs.extend(duration)
 
 const width = 500;
 const height = 500;
@@ -69,7 +73,9 @@ const setStationPositions = (stationPositions) => {
   const lineFunc = d3.line().x(xMap).y(yMap).curve(d3.curveNatural);
   const createLine = (subwayLine) => lineFunc(subwayLine.stations);
 
+  container.selectAll('.line').remove()
   const lineSelection = container.selectAll('.line').data(Object.values(lines));
+
   lineSelection.enter().append('path')
     .attr('class', 'line')
     .attr('name', (l) => l.stations.join('-'))
@@ -92,27 +98,44 @@ const setStationPositions = (stationPositions) => {
   addClickHandlers(merged);
 };
 
-let stationDetailsCache = {}
 const getStationDetails = async (stationName) => {
-  if (!stationDetailsCache[stationName]) {
+  let key = `station-${stationName}`;
+  if (localStorage.getItem(key)) {
+    return JSON.parse(localStorage.getItem(key))
+  } else {
     const stationResults = await stations.search(stationName, {results: 1})
-    stationDetailsCache[stationName] = {name: stationResults[0].name, id: stationResults[0].id}
+    const value = {name: stationResults[0].name, id: stationResults[0].id};
+    localStorage.setItem(key, JSON.stringify(value))
+    return value
   }
-  return stationDetailsCache[stationName]
 }
 
-let journeyDetailsCache = {}
+let journeyStartDate = '2022-09-06T18:00:00+0200';
+
+const isJourneyAdaptedToNightTrip = (journey) => journey.totalTime < 14 * 3600 && journey.legs.length <= 2 && journey.legs.find(leg => leg.time > 7 * 3600)
+
 const getJourneyDetails = async (stationName1, stationName2) => {
-  let key = [stationName1, stationName2].join(',');
-  if (!journeyDetailsCache[key]) {
-    const journeyResults = await journeys(
-      stationDetailsCache[stationName1].id,
-      stationDetailsCache[stationName2].id,
-      { when: new Date('2022-09-06T05:00:00+0200') }
-    )
-    journeyDetailsCache[key] = journeyResults
+  let key = `journey-starting-${journeyStartDate}-from-${stationName1}-to-${stationName2}`;
+  if (localStorage.getItem(key)) {
+    return JSON.parse(localStorage.getItem(key))
+  } else {
+    let value =
+      (await journeys(
+        (await getStationDetails(stationName1)).id,
+        (await getStationDetails(stationName2)).id,
+        {when: new Date(journeyStartDate)}
+      )).map(journey => ({
+        ...journey,
+        legs: journey.legs.map(leg => ({
+          ...leg,
+          time: dayjs.duration(dayjs(leg.arrival).diff(leg.departure)).asSeconds()
+        })),
+        totalTime: dayjs.duration(dayjs(journey.legs[journey.legs.length - 1].arrival).diff(journey.legs[0].departure)).asSeconds()
+      })
+    );
+    localStorage.setItem(key, JSON.stringify(value))
+    return value
   }
-  return journeyDetailsCache[key]
 }
 
 let travelTimes = null;
@@ -120,21 +143,6 @@ const updateMap = async (newHomeStationId) => {
   homeStationId = newHomeStationId
   hourCircleBlank.transition().attr('opacity', 0);
   hourCircle.transition().attr('opacity', 1);
-
-  let stationName = stationsAndPorts[homeStationId].name;
-  let detailsElement = document.getElementById('details');
-  detailsElement.textContent = 'Selected station: ' + (await getStationDetails(stationName)).name
-
-  const directDestinations = Object.values(lines)
-    .filter(({stations}) => stations.includes(stationName))
-    .map(({stations}) => stations.find(otherStationName => otherStationName !== stationName))
-  console.log(directDestinations)
-
-  for (const directDestination of directDestinations) {
-    await getStationDetails(directDestination)
-    const journeyResults = await getJourneyDetails(stationName, directDestination);
-    console.log(journeyResults)
-  }
 
   travelTimes = getTravelTimes(homeStationId, graph, stationsAndPorts)
   const stationPositions = computeStationPositions(homeStationId, travelTimes)
@@ -144,7 +152,34 @@ const updateMap = async (newHomeStationId) => {
 let shouldHideTooltip = true;
 const addClickHandlers = (selection) =>
   selection
-    .on('click', (d) => updateMap(d))
+    .on('click', async (newHomeStationId) => {
+      let stationName = stationsAndPorts[newHomeStationId].name;
+      let detailsElement = document.getElementById('details');
+      detailsElement.textContent = 'Selected station: ' + (await getStationDetails(stationName)).name
+
+      const directDestinations = Object.values(lines)
+        .filter(({stations}) => stations.includes(stationName))
+        .map(({stations}) => stations.find(otherStationName => otherStationName !== stationName))
+
+      for (const directDestination of directDestinations) {
+        await getStationDetails(directDestination)
+        const journeyResults = await getJourneyDetails(stationName, directDestination);
+        const nightTrip = journeyResults.find(journey => isJourneyAdaptedToNightTrip(journey))
+        debugger
+        if (nightTrip) {
+          for (const [key, line] of Object.entries(lines)) {
+            if ([`${stationName} - ${directDestination}`, `${directDestination} - ${stationName}`].includes(line.name)) {
+              lines[key].timeReal = nightTrip.totalTime
+              lines[key].color = "green"
+            }
+          }
+          console.log(directDestination + ': A journey is suitable for a night trip')
+          console.log(nightTrip)
+        }
+      }
+      await calculateGraph(newHomeStationId)
+      return updateMap(newHomeStationId);
+    })
     .on('mouseenter', (d) => {
       shouldHideTooltip = false;
       tooltip.style.top = `${d3.event.pageY + 10}px`
@@ -224,7 +259,25 @@ const addLine = ({description, name, type, coordinates}) => {
   }
 }
 
-d3.xml('doc.kml', (output) => {
+const calculateGraph = async (newHomeStationId) => {
+  graph = Object.values(lines).reduce((acc, {stations: [station1, station2], time, timeReal}) => ({
+    ...acc,
+    [station1]: {...(acc[[station1]] || {}), [station2]: (timeReal || time)}
+  }), {})
+  for (const [station1, stations2] of Object.entries(graph)) {
+    for (const [station2, time] of Object.entries(stations2)) {
+      if (!graph[station2]) {
+        graph[station2] = {}
+      }
+      if (!graph[station2][station1]) {
+        graph[station2][station1] = time
+      }
+    }
+  }
+  await updateMap(newHomeStationId || defaultStop);
+};
+
+d3.xml('doc.kml', async (output) => {
   [...output.documentElement.getElementsByTagName("Placemark")]
     .forEach((element) => {
       const type = element.parentElement.getElementsByTagName('name')[0].textContent;
@@ -246,20 +299,5 @@ d3.xml('doc.kml', (output) => {
       addLine({description, name, coordinates, type})
     })
 
-  graph = Object.values(lines).reduce((acc, {stations: [station1, station2], time}) => ({
-    ...acc,
-    [station1]: {...(acc[[station1]] || {}), [station2]: (time)}
-  }), {})
-  for (const [station1, stations2] of Object.entries(graph)) {
-    for (const [station2, time] of Object.entries(stations2)) {
-      if (!graph[station2]) {
-        graph[station2] = {}
-      }
-      if (!graph[station2][station1]) {
-        graph[station2][station1] = time
-      }
-    }
-  }
-  updateMap(defaultStop);
-  console.log(lines)
+  await calculateGraph();
 })

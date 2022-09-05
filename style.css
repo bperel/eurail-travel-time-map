@@ -81,6 +81,11 @@ a:link, a:visited {
   margin-bottom: 0;
 }
 
+#clear-cache {
+  float: right;
+  margin: 10px;
+}
+
 @media screen and (max-width: 500px) {
   .stop {
     stroke-width: 22px;
