@@ -12,6 +12,10 @@ export default defineConfig({
       'assert': require.resolve('assert/') // don't forget  to install assert (npm i --save-dev assert)
     }
   },
+  
+  define: {
+    'process.env': {}
+  },
 
   optimizeDeps: {
     esbuildOptions: {
