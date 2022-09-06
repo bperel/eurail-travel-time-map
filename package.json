@@ -12,6 +12,7 @@
     "dayjs": "^1.11.5",
     "d3": "^4.13.0",
     "dijkstrajs": "^1.0.2",
+    "haversine-distance": "^1.2.1",
     "interrail": "^3.0.4"
   },
   "devDependencies": {

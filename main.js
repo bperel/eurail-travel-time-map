@@ -4,6 +4,7 @@ import {getTravelTimes, MAX_TIME} from './virtual_rider'
 import {journeys, stations} from "interrail";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
+import haversine from 'haversine-distance'
 
 dayjs.extend(duration)
 
@@ -110,7 +111,7 @@ const getStationDetails = async (stationName) => {
   }
 }
 
-let journeyStartDate = '2022-09-06T18:00:00+0200';
+let journeyStartDate = '2022-09-07T18:00:00+0200';
 
 const isJourneyAdaptedToNightTrip = (journey) => journey.totalTime < 14 * 3600 && journey.legs.length <= 2 && journey.legs.find(leg => leg.time > 7 * 3600)
 
@@ -153,27 +154,32 @@ let shouldHideTooltip = true;
 const addClickHandlers = (selection) =>
   selection
     .on('click', async (newHomeStationId) => {
-      let stationName = stationsAndPorts[newHomeStationId].name;
+      const currentStation = stationsAndPorts[newHomeStationId];
+      const stationName = currentStation.name
       let detailsElement = document.getElementById('details');
       detailsElement.textContent = 'Selected station: ' + (await getStationDetails(stationName)).name
 
-      const directDestinations = Object.values(lines)
-        .filter(({stations}) => stations.includes(stationName))
-        .map(({stations}) => stations.find(otherStationName => otherStationName !== stationName))
+      const closeCities = Object.values(stationsAndPorts)
+        .filter((otherStation) =>
+          otherStation.name !== currentStation.name && haversine(currentStation, otherStation) < 1_000_000
+        ).map(({name}) => name)
 
-      for (const directDestination of directDestinations) {
-        await getStationDetails(directDestination)
-        const journeyResults = await getJourneyDetails(stationName, directDestination);
+      let firstStation = stationsAndPorts[Object.keys(stationsAndPorts)[0]];
+      console.log(`Distance to ${Object.keys(stationsAndPorts)[0]}: ${haversine(currentStation, firstStation)}`);
+
+      console.log('Close cities: ' + JSON.stringify(closeCities))
+      for (const closeCity of closeCities) {
+        await getStationDetails(closeCity)
+        const journeyResults = await getJourneyDetails(stationName, closeCity);
         const nightTrip = journeyResults.find(journey => isJourneyAdaptedToNightTrip(journey))
-        debugger
         if (nightTrip) {
           for (const [key, line] of Object.entries(lines)) {
-            if ([`${stationName} - ${directDestination}`, `${directDestination} - ${stationName}`].includes(line.name)) {
+            if ([`${stationName} - ${closeCity}`, `${closeCity} - ${stationName}`].includes(line.name)) {
               lines[key].timeReal = nightTrip.totalTime
               lines[key].color = "green"
             }
           }
-          console.log(directDestination + ': A journey is suitable for a night trip')
+          console.log(closeCity + ': A journey is suitable for a night trip')
           console.log(nightTrip)
         }
       }
