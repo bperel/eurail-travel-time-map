@@ -111,9 +111,9 @@ const getStationDetails = async (stationName) => {
   }
 }
 
-let journeyStartDate = '2022-09-07T18:00:00+0200';
+let journeyStartDate = '2022-09-08T18:00:00+0200';
 
-const isJourneyAdaptedToNightTrip = (journey) => journey.totalTime < 14 * 3600 && journey.legs.length <= 2 && journey.legs.find(leg => leg.time > 7 * 3600)
+const getNightTripLeg = (journey) => journey.totalTime < 14 * 3600 && journey.legs.length <= 2 && journey.legs.find(leg => leg.time > 7 * 3600)
 
 const getJourneyDetails = async (stationName1, stationName2) => {
   let key = `journey-starting-${journeyStartDate}-from-${stationName1}-to-${stationName2}`;
@@ -157,13 +157,29 @@ const addClickHandlers = (selection) =>
       const currentStation = stationsAndPorts[newHomeStationId];
       const stationName = currentStation.name
       let detailsElement = document.getElementById('details');
-      detailsElement.textContent = 'Selected station: ' + (await getStationDetails(stationName)).name
+      let stationDetails = await getStationDetails(stationName);
+      detailsElement.textContent = 'Selected station: ' + stationDetails.name
+
+      const smallTrip = `${stationName} - ${stationDetails.name}`
+      stationsAndPorts[stationDetails.name] = {
+        name: stationDetails.name,
+        color: 'green',
+        lat: stationDetails.lat,
+        lon: stationDetails.lon,
+      }
+      lines[smallTrip] = {
+        name: smallTrip,
+        stations: [stationName, stationDetails.name],
+        color: 'red',
+        time: 1800
+      }
 
       const closeCities = Object.values(stationsAndPorts)
         .filter((otherStation) =>
           otherStation.name !== currentStation.name && haversine(currentStation, otherStation) < 1_000_000
         ).map(({name}) => name)
 
+      console.log(stationsAndPorts)
       let firstStation = stationsAndPorts[Object.keys(stationsAndPorts)[0]];
       console.log(`Distance to ${Object.keys(stationsAndPorts)[0]}: ${haversine(currentStation, firstStation)}`);
 
@@ -171,16 +187,36 @@ const addClickHandlers = (selection) =>
       for (const closeCity of closeCities) {
         await getStationDetails(closeCity)
         const journeyResults = await getJourneyDetails(stationName, closeCity);
-        const nightTrip = journeyResults.find(journey => isJourneyAdaptedToNightTrip(journey))
-        if (nightTrip) {
-          for (const [key, line] of Object.entries(lines)) {
-            if ([`${stationName} - ${closeCity}`, `${closeCity} - ${stationName}`].includes(line.name)) {
-              lines[key].timeReal = nightTrip.totalTime
-              lines[key].color = "green"
+        const nightTripLeg = journeyResults.find(journey => getNightTripLeg(journey))
+        if (nightTripLeg) {
+          console.log(`${closeCity}: The journey is suitable for a night trip`)
+          for (const leg of nightTripLeg.legs) {
+            for (const side of ['origin', 'destination']) {
+              if (!Object.keys(stationsAndPorts).includes(leg[side].name)) {
+                stationsAndPorts[leg[side].name] = {
+                  name: leg[side].name,
+                  color: 'red',
+                  lat: leg[side].location.latitude,
+                  lon: leg[side].location.longitude,
+                }
+              }
+            }
+            let name = `${leg.origin.name} - ${leg.destination.name}`;
+            lines[name] = {
+              name,
+              stations: [leg.origin.name, leg.destination.name],
+              color: 'green',
+              time: dayjs.duration(dayjs(leg.arrival).diff(leg.departure)).asSeconds()
             }
           }
-          console.log(closeCity + ': A journey is suitable for a night trip')
-          console.log(nightTrip)
+          // for (const [key, line] of Object.entries(lines)) {
+          //   if ([`${stationName} - ${closeCity}`, `${closeCity} - ${stationName}`].includes(line.name)) {
+          //     console.log(`The night trip leg will be to ${closeCity})`)
+          //     lines[key].timeReal = nightTripLeg.totalTime
+          //     lines[key].color = "green"
+          //   }
+          // }
+          console.log(nightTripLeg)
         }
       }
       await calculateGraph(newHomeStationId)
@@ -266,6 +302,7 @@ const addLine = ({description, name, type, coordinates}) => {
 }
 
 const calculateGraph = async (newHomeStationId) => {
+  console.log(lines)
   graph = Object.values(lines).reduce((acc, {stations: [station1, station2], time, timeReal}) => ({
     ...acc,
     [station1]: {...(acc[[station1]] || {}), [station2]: (timeReal || time)}
