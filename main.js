@@ -101,14 +101,41 @@ const setStationPositions = (stationPositions) => {
 
 const getStationDetails = async (stationName) => {
   let key = `station-${stationName}`;
+  let value
   if (localStorage.getItem(key)) {
-    return JSON.parse(localStorage.getItem(key))
+    value = JSON.parse(localStorage.getItem(key))
   } else {
     const stationResults = await stations.search(stationName, {results: 1})
-    const value = {name: stationResults[0].name, id: stationResults[0].id};
+    value = {
+      name: stationResults[0].name,
+      id: stationResults[0].id,
+      lat: parseFloat(stationResults[0].location.latitude),
+      lon: parseFloat(stationResults[0].location.longitude)
+    };
     localStorage.setItem(key, JSON.stringify(value))
-    return value
   }
+  for (const existingStationName of Object.keys(stationsAndPorts)) {
+    if (existingStationName === stationName) {
+      delete stationsAndPorts[existingStationName];
+      stationsAndPorts[value.name] = {
+        name: value.name,
+        color: 'red',
+        lat: value.lat,
+        lon: value.lon,
+      }
+    }
+  }
+  for (const existingLine of Object.keys(lines)) {
+    if (existingLine.split(' - ').includes(stationName)) {
+      lines[existingLine.replace(stationName, value.name)] = {
+        ...lines[existingLine],
+        name: existingLine.replace(stationName, value.name),
+        stations: lines[existingLine].stations.map((station => station === stationName ? value.name : station)),
+      }
+      delete lines[existingLine];
+    }
+  }
+  return value
 }
 
 let journeyStartDate = '2022-09-08T18:00:00+0200';
@@ -158,21 +185,8 @@ const addClickHandlers = (selection) =>
       const stationName = currentStation.name
       let detailsElement = document.getElementById('details');
       let stationDetails = await getStationDetails(stationName);
+      newHomeStationId = stationDetails.name
       detailsElement.textContent = 'Selected station: ' + stationDetails.name
-
-      const smallTrip = `${stationName} - ${stationDetails.name}`
-      stationsAndPorts[stationDetails.name] = {
-        name: stationDetails.name,
-        color: 'green',
-        lat: stationDetails.lat,
-        lon: stationDetails.lon,
-      }
-      lines[smallTrip] = {
-        name: smallTrip,
-        stations: [stationName, stationDetails.name],
-        color: 'red',
-        time: 1800
-      }
 
       const closeCities = Object.values(stationsAndPorts)
         .filter((otherStation) =>
@@ -209,18 +223,12 @@ const addClickHandlers = (selection) =>
               time: dayjs.duration(dayjs(leg.arrival).diff(leg.departure)).asSeconds()
             }
           }
-          // for (const [key, line] of Object.entries(lines)) {
-          //   if ([`${stationName} - ${closeCity}`, `${closeCity} - ${stationName}`].includes(line.name)) {
-          //     console.log(`The night trip leg will be to ${closeCity})`)
-          //     lines[key].timeReal = nightTripLeg.totalTime
-          //     lines[key].color = "green"
-          //   }
-          // }
           console.log(nightTripLeg)
         }
       }
+      debugger
       await calculateGraph(newHomeStationId)
-      return updateMap(newHomeStationId);
+      console.log(Object.keys(stationsAndPorts).filter(name => name === 'Vienna'))
     })
     .on('mouseenter', (d) => {
       shouldHideTooltip = false;
@@ -280,7 +288,7 @@ const addLine = ({description, name, type, coordinates}) => {
   const lineStations = name.split(' - ');
   lines[name] = {
     name,
-    coordinates,
+    coordinates: coordinates.map(coordinate => ({lat: parseFloat(coordinate.lat), lon: parseFloat(coordinate.lon)})),
     stations: lineStations,
     color: type === 'Routes (train)' ? 'red' : 'blue',
     time: description.match(/(\d+)hr(?: (\d+) *min)?/).reduce(
