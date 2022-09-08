@@ -5,15 +5,19 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "sed -i 's/is.buffer =.\\+/is.buffer = typeof (Buffer) !== \"undefined\" ? Buffer.isBuffer : function() { return false }/' node_modules/@sindresorhus/is/index.js;sed -i 's/if (Buffer.\\+/if (Buffer?.isBuffer(value)) {/' node_modules/@sindresorhus/is/index.js;"
   },
   "dependencies": {
     "@esbuild-plugins/node-globals-polyfill": "^0.1.1",
-    "dayjs": "^1.11.5",
     "d3": "^4.13.0",
+    "dayjs": "^1.11.5",
     "dijkstrajs": "^1.0.2",
+    "events": "^3.3.0",
     "haversine-distance": "^1.2.1",
-    "interrail": "^3.0.4"
+    "interrail": "^3.0.4",
+    "process": "^0.11.10",
+    "util": "^0.12.4"
   },
   "devDependencies": {
     "assert": "^2.0.0",

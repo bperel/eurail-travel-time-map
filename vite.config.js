@@ -5,14 +5,20 @@ export default defineConfig({
   server: {
     port: 3000
   },
-  base: '/eurail-travel-time-map/',
+  base: '/',
 
   resolve: {
+    alias: {
+      process: "process/browser",
+      stream: "stream-browserify",
+      zlib: "browserify-zlib",
+      util: "util",
+    },
     fallback: {
       'assert': require.resolve('assert/') // don't forget  to install assert (npm i --save-dev assert)
     }
   },
-  
+
   define: {
     'process.env': {}
   },
@@ -26,9 +32,10 @@ export default defineConfig({
       // Enable esbuild polyfill plugins
       plugins: [
         NodeGlobalsPolyfillPlugin({
-          buffer: true
+          buffer: true,
+          process: true
         })
       ]
     }
-  }
+  },
 })
